@@ -7,46 +7,40 @@ import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
 
+import com.android.billingclient.api.AcknowledgePurchaseParams;
+import com.android.billingclient.api.AcknowledgePurchaseResponseListener;
 import com.android.billingclient.api.BillingClient;
 import com.android.billingclient.api.BillingClientStateListener;
+import com.android.billingclient.api.BillingFlowParams;
 import com.android.billingclient.api.BillingResult;
+import com.android.billingclient.api.ConsumeParams;
+import com.android.billingclient.api.ConsumeResponseListener;
 import com.android.billingclient.api.Purchase;
 import com.android.billingclient.api.PurchasesUpdatedListener;
 import com.android.billingclient.api.SkuDetails;
 import com.android.billingclient.api.SkuDetailsParams;
 import com.android.billingclient.api.SkuDetailsResponseListener;
+import com.zego.zegoliveroom.ZegoLiveRoom;
+import com.zego.zegoliveroom.callback.IZegoRoomCallback;
+import com.zego.zegoliveroom.entity.ZegoStreamInfo;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class MainActivity extends AppCompatActivity implements BillingClientStateListener {
+public class MainActivity extends AppCompatActivity implements BillingClientStateListener, PurchasesUpdatedListener, AcknowledgePurchaseResponseListener {
 
     BillingClient billingClient;
-    private Button btn_bug;
+    private Button btn_bug,btn_great_room;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        btn_bug.findViewById(R.id.btn_bug);
+        btn_bug = btn_bug.findViewById(R.id.btn_bug);
+        btn_great_room = btn_great_room.findViewById(R.id.btn_great_room);
 
         //1、初始化  PurchasesUpdatedListener 的引用，以接收通过您的应用以及 Google Play 商店发起的购买交易的更新。
-        billingClient = BillingClient.newBuilder(getApplication()).setListener(new PurchasesUpdatedListener() {
-            @Override
-            public void onPurchasesUpdated(BillingResult billingResult, @Nullable List<Purchase> list) {
-                if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && list != null) {
-                    // TODO 支付完成
-                } else if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.USER_CANCELED) {
-                    // Handle an error caused by a user cancelling the purchase flow.
-                    // TODO 用户取消了支付
-                } else if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED) {
-                    // Handle an error caused by a user cancelling the purchase flow.
-                    // TODO 商品已经购买过（重复购买了此商品，如果需要支持重复购买，需要将商品购买成功后消费掉）
-                } else {
-                    // Handle any other error codes.
-                }
-            }
-        }).build();
+        billingClient = BillingClient.newBuilder(getApplication()).setListener(this).build();
 
         //2、链接Google Play Service   实现BillingClientStateListener
         billingClient.startConnection(this);
@@ -55,6 +49,60 @@ public class MainActivity extends AppCompatActivity implements BillingClientStat
         btn_bug.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                //skuDetails  通过调用querySkuDetailsAsync（）检索“ skuDetails”的值。
+                BillingFlowParams flowParams = BillingFlowParams.newBuilder()
+                        .setSkuDetails(skuDetails)
+                        .build();
+                BillingResult responseCode = billingClient.launchBillingFlow(getParent(), flowParams);
+
+
+            }
+        });
+
+
+        //登录 房间
+        btn_great_room.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                ZegoLiveRoom.setUser("888", "suxiting");
+            }
+        });
+
+        ZegoLiveRoom zegoLiveRoom = new ZegoLiveRoom();
+        zegoLiveRoom.setZegoRoomCallback(new IZegoRoomCallback(){
+
+            @Override
+            public void onKickOut(int i, String s, String s1) {
+
+            }
+
+            @Override
+            public void onDisconnect(int i, String s) {
+
+            }
+
+            @Override
+            public void onReconnect(int i, String s) {
+
+            }
+
+            @Override
+            public void onTempBroken(int i, String s) {
+
+            }
+
+            @Override
+            public void onStreamUpdated(int i, ZegoStreamInfo[] zegoStreamInfos, String s) {
+
+            }
+
+            @Override
+            public void onStreamExtraInfoUpdated(ZegoStreamInfo[] zegoStreamInfos, String s) {
+
+            }
+
+            @Override
+            public void onRecvCustomCommand(String s, String s1, String s2, String s3) {
 
             }
         });
@@ -97,8 +145,9 @@ public class MainActivity extends AppCompatActivity implements BillingClientStat
      * 商品信息需要将带有内购权限的apk上传到GooglePlayConsole后，
      * 添加内购商品，设置商品ID，待商品生效后，
      * 移动端通过商品ID来查询商品的详细信息。
-     * */
-    private String premiumUpgradePrice,gasPrice;
+     */
+    private String premiumUpgradePrice, gasPrice;
+    private SkuDetails skuDetails;
 
     private void getProduct() {
         List<String> skuList = new ArrayList<>();
@@ -124,7 +173,7 @@ public class MainActivity extends AppCompatActivity implements BillingClientStat
                             gasPrice = price;
                         }
                     }
-                }else {
+                } else {
                     //发生错误，您可以使用 getDebugMessage() 查看相关的错误消息。
                     billingResult.getDebugMessage();
                 }
@@ -133,6 +182,71 @@ public class MainActivity extends AppCompatActivity implements BillingClientStat
     }
 
 
+    @Override
+    public void onPurchasesUpdated(BillingResult billingResult, @Nullable List<Purchase> list) {
+        if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK && list != null) {
+            // TODO 支付完成
+            for (Purchase purchase : list) {
+                handlePurchase(purchase);
+
+                //消耗商品
+                consumableGoods(purchase);
+            }
+        } else if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.USER_CANCELED) {
+            // Handle an error caused by a user cancelling the purchase flow.
+            // TODO 用户取消了支付
+        } else if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED) {
+            // Handle an error caused by a user cancelling the purchase flow.
+            // TODO 商品已经购买过（重复购买了此商品，如果需要支持重复购买，需要将商品购买成功后消费掉）
+        } else {
+            // Handle any other error codes.
+        }
+    }
+
+    @Override
+    public void onPointerCaptureChanged(boolean hasCapture) {
+
+    }
+
+
+    void handlePurchase(Purchase purchase) {
+        if (purchase.getPurchaseState() == Purchase.PurchaseState.PURCHASED) {
+            // Grant entitlement to the user.
+            // Acknowledge the purchase if it hasn't already been acknowledged.
+            if (!purchase.isAcknowledged()) {
+                AcknowledgePurchaseParams acknowledgePurchaseParams =
+                        AcknowledgePurchaseParams.newBuilder()
+                                .setPurchaseToken(purchase.getPurchaseToken())
+                                .build();
+                billingClient.acknowledgePurchase(acknowledgePurchaseParams, this);
+            }
+        }
+    }
+
+    @Override
+    public void onAcknowledgePurchaseResponse(BillingResult billingResult) {
+
+    }
+
+    //商品的消耗 请求
+    private void consumableGoods(Purchase purchase) {
+        ConsumeParams consumeParams = ConsumeParams.newBuilder()
+//                .setPurchaseToken(/* token */)
+//                .setDeveloperPayload(/* payload */)
+                .setPurchaseToken(purchase.getPurchaseToken())
+                .setDeveloperPayload(purchase.getDeveloperPayload())
+                .build();
+        ConsumeResponseListener listener = new ConsumeResponseListener() {
+            @Override
+            public void onConsumeResponse(BillingResult billingResult, String outToken) {
+                if (billingResult.getResponseCode() == BillingClient.BillingResponseCode.OK) {
+                    // Handle the success of the consume operation.
+                    // For example, increase the number of coins inside the user's basket.
+                }
+            }
+        };
+        billingClient.consumeAsync(consumeParams, listener);
+    }
 
 
 }
