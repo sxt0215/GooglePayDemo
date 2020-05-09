@@ -4,6 +4,7 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 
@@ -21,8 +22,16 @@ import com.android.billingclient.api.SkuDetails;
 import com.android.billingclient.api.SkuDetailsParams;
 import com.android.billingclient.api.SkuDetailsResponseListener;
 import com.zego.zegoliveroom.ZegoLiveRoom;
+import com.zego.zegoliveroom.callback.IZegoCustomCommandCallback;
+import com.zego.zegoliveroom.callback.IZegoLoginCompletionCallback;
 import com.zego.zegoliveroom.callback.IZegoRoomCallback;
+import com.zego.zegoliveroom.callback.im.IZegoIMCallback;
+import com.zego.zegoliveroom.callback.im.IZegoRoomMessageCallback;
+import com.zego.zegoliveroom.entity.ZegoBigRoomMessage;
+import com.zego.zegoliveroom.entity.ZegoRoomMessage;
 import com.zego.zegoliveroom.entity.ZegoStreamInfo;
+import com.zego.zegoliveroom.entity.ZegoUser;
+import com.zego.zegoliveroom.entity.ZegoUserState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,7 +39,7 @@ import java.util.List;
 public class MainActivity extends AppCompatActivity implements BillingClientStateListener, PurchasesUpdatedListener, AcknowledgePurchaseResponseListener {
 
     BillingClient billingClient;
-    private Button btn_bug,btn_great_room;
+    private Button btn_bug, btn_great_room;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -69,7 +78,7 @@ public class MainActivity extends AppCompatActivity implements BillingClientStat
         });
 
         ZegoLiveRoom zegoLiveRoom = new ZegoLiveRoom();
-        zegoLiveRoom.setZegoRoomCallback(new IZegoRoomCallback(){
+        zegoLiveRoom.setZegoRoomCallback(new IZegoRoomCallback() {
 
             @Override
             public void onKickOut(int i, String s, String s1) {
@@ -106,6 +115,43 @@ public class MainActivity extends AppCompatActivity implements BillingClientStat
 
             }
         });
+        //登录房间
+        zegoLiveRoom.loginRoom("roomID", 1, new IZegoLoginCompletionCallback() {
+
+            @Override
+            public void onLoginCompletion(int stateCode, ZegoStreamInfo[] zegoStreamInfos) {
+                // zegoStreamInfos，内部封装了 userID、userName、streamID 和 extraInfo。
+                // 登录房间成功后，开发者可通过 zegoStreamInfos 获取到当前房间推流信息，便于后续的拉流操作。
+                // 当 listStream 为 null 时说明当前房间没有人推流
+                if (stateCode == 0) {
+                    Log.i("登录房间成功 roomId : %s", "roomID");
+                } else {
+                    // 登录房间失败请查看 登录房间错误码，如果错误码是网络问题相关的，App 提示用户稍后再试，或者 App 内部重试登录。
+                    Log.i("登录房间失败, stateCode : %d", stateCode + "");
+                }
+            }
+        });
+
+        /**
+         * 创建会话前，开发者需要调用此 API 设置房间配置。
+         *
+         * 设置房间配置信息。
+         * 注意：必须在 {@link #loginRoom(String, int, IZegoLoginCompletionCallback)} or
+         * {@link #loginRoom(String, String, int, IZegoLoginCompletionCallback)} 之前调用。
+         *
+         * @param audienceCreateRoom 观众是否可以创建房间：true: 可以，false: 不可以。默认值为 true
+         * @param userStateUpdate    用户状态（进入/退出房间））是否广播：
+         *                           true:  房间内用户状态改变时，其他用户会收到 {@link IZegoIMCallback#onUserUpdate} 回调；
+         *                           false: 房间内用户状态改变时，其他用户不会收到 {@link IZegoIMCallback#onUserUpdate} 回调
+         */
+        zegoLiveRoom.setRoomConfig(true,true);
+
+
+        zegoLiveRoom.send
+
+
+
+
     }
 
     @Override
@@ -247,6 +293,116 @@ public class MainActivity extends AppCompatActivity implements BillingClientStat
         };
         billingClient.consumeAsync(consumeParams, listener);
     }
+
+    /**
+     * 送礼物   发送消息
+     * <p>
+     * 发送房间内广播消息。
+     *
+     * <p>发送成功后，房间内其他成员会通过 {@link IZegoIMCallback#onRecvRoomMessage(String, ZegoRoomMessage[])} 接收此消息</p>
+     *
+     * @param messageType     消息类型，   详见 {@link com.zego.zegoliveroom.constants.ZegoIM.MessageType}
+     * @param messageCategory 消息分类，   详见 {@link com.zego.zegoliveroom.constants.ZegoIM.MessageCategory}
+     * @param content         消息内容，长度 <= 512 bytes 的可打印字符串
+     * @param callback        实现 {@link IZegoRoomMessageCallback} 接口的对象实例，用于接收消息发送结果及 server 下发的 messageID
+     * @return true:调用成功 等待 {@link IZegoRoomMessageCallback#onSendRoomMessage(int, String, long)} 返回, false:调用失败
+     * @attentin 此 API 调用频率默认是 600次/min，若需要更大的发送频率可联系 Zego 技术支持进行配置
+     */
+    public boolean sendRoomMessage(int messageType, int messageCategory, String content, IZegoRoomMessageCallback callback) {
+        return ZGJoinLiveHelper.sharedInstance().getZegoLiveRoom().sendRoomMessage(messageType, 4, content, new IZegoRoomMessageCallback() {
+            @Override
+            public void onSendRoomMessage(int i, String s, long l) {
+
+            }
+        });
+    }
+
+
+    // 设置 SDK 相关的回调监听
+    public void initSDKCallback() {
+
+        /**
+         * 收到房间的广播消息。
+         *
+         * @param roomID        房间 ID
+         * @param listMsg       消息列表, 每条消息都将包含消息内容，消息分类，消息类型，发送者等信息
+         * @see com.zego.zegoliveroom.ZegoLiveRoom#sendRoomMessage(int, int, String, IZegoRoomMessageCallback)
+         */
+        ZGJoinLiveHelper.sharedInstance().getZegoLiveRoom().setZegoIMCallback(new IZegoIMCallback() {
+            @Override
+            public void onUserUpdate(ZegoUserState[] zegoUserStates, int i) {
+
+            }
+
+            @Override
+            public void onRecvRoomMessage(String s, ZegoRoomMessage[] zegoRoomMessages) {
+                //发送成功后 房间内其他成员会通过 {@link IZegoIMCallback#onRecvRoomMessage(String, ZegoRoomMessage[])} 接收此消息</p>
+
+
+            }
+
+            @Override
+            public void onUpdateOnlineCount(String s, int i) {
+
+            }
+
+            @Override
+            public void onRecvBigRoomMessage(String s, ZegoBigRoomMessage[] zegoBigRoomMessages) {
+
+            }
+        });
+    }
+
+
+    /**
+     * 在房间中创建一个会话。
+     * 要想观众可以创建房间，必须在登录前调用 {@link #setRoomConfig(boolean, boolean)} 进行设置。
+     *
+     * @param conversationName     会话名称，长度 <= 255 bytes 的可打印字符串
+     * @param listMember           参与会话的成员列表，所有成员必须在同一个房间内
+     * @param callback             实现 {@link IZegoCreateConversationCallback} 接口的对象实例，
+     *                             用于接收创建会话结果及 server 下发的会话 ID
+     * @return                     true: 调用成功，等待 {@link IZegoCreateConversationCallback#onCreateConversation(int, String, String)} 返回；
+     *                             false: 调用失败
+     *
+     * @see #setRoomConfig(boolean, boolean)
+     */
+    public boolean createConversation(String conversationName, ZegoUser[] listMember,IZegoCustomCommandCallback callback){
+        return ZGJoinLiveHelper.sharedInstance().getZegoLiveRoom().sendCustomCommand(listMember,conversationName, new IZegoCustomCommandCallback(){
+
+            @Override
+            public void onSendCustomCommand(int i, String s) {
+
+            }
+        });
+    }
+
+
+    /**
+     * 在会话中发送一条消息。
+     * 消息发送成功后，参与会话的成员列表会通过 {@link IZegoIMCallback#onRecvConversationMessage(String, String, ZegoConversationMessage)} 收到此消息
+     * 注意：发送会话消息前，必须调用 {@link #createConversation(String, ZegoUser[], IZegoCreateConversationCallback)} 成功创建会话
+     *
+     * @param messageType       消息类型， 详见 {@link com.zego.zegoliveroom.constants.ZegoIM.MessageType}
+     * @param conversationID    会话 ID，由 server 下发。在 {@link #createConversation(String, ZegoUser[], IZegoCreateConversationCallback)}
+     *                          的回调 {@link IZegoCreateConversationCallback#onCreateConversation(int, String, String)} 中获得
+     * @param content           消息内容，长度 <= 1024 bytes 的可打印字符串
+     * @param callback          实现 {@link IZegoConversationMessageCallback} 接口的对象实例，用于接收发送消息结果及 server 下发的 messageID
+     * @return                  true:调用成功，等待 {@link IZegoConversationMessageCallback#onSendConversationMessage(int, String, String, long)} 回调；false:调用失败
+     *
+     * @see IZegoIMCallback#onRecvConversationMessage(String, String, ZegoConversationMessage)
+     */
+    public boolean sendConversationMessage(int messageType, String conversationID, String content, IZegoRoomMessageCallback callback){
+        return ZGJoinLiveHelper.sharedInstance().getZegoLiveRoom().sendRoomMessage(messageType, 4, content, new IZegoRoomMessageCallback() {
+            @Override
+            public void onSendRoomMessage(int i, String s, long l) {
+
+            }
+        });
+    }
+
+
+
 
 
 }
